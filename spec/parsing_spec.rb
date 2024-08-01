@@ -59,12 +59,16 @@ RSpec.describe "Parsing" do
 
     it "attaches inline comments to a mapping key" do
       ast = Psych::Comments.parse(<<~YAML)
-        bar: # foo
-          baz
+        foo: # foo
+          foo
+        bar: # bar
+          - bar
       YAML
       expect(ast.root).to be_a(Psych::Nodes::Mapping)
       expect(ast.root.children[0].inline_comment).to eq("# foo")
       expect(ast.root.children[1].inline_comment).to eq(nil)
+      expect(ast.root.children[2].inline_comment).to eq("# bar")
+      expect(ast.root.children[3].inline_comment).to eq(nil)
     end
 
     it "attaches inline comments to a mapping value" do

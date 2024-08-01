@@ -103,7 +103,7 @@ module Psych
         @state = :line_start
       end
 
-      def emit(node)
+      def emit(node, skip_comment: false)
         if node.equal?(@comment_lookahead[0])
           @comment_lookahead.shift
         else
@@ -131,10 +131,9 @@ module Psych
           else
             print stringify_adjust_scalar(node, INDENT * @indent)
           end
-          if node.inline_comment
-            space!
-            emit_comment(node.inline_comment)
-          end
+
+          # special case for inline key comment
+          emit_comment(node.inline_comment, space: true) if node.inline_comment && !skip_comment
         when Psych::Nodes::Mapping
           set_flow(flow?(node)) do
             if @flow
@@ -146,8 +145,9 @@ module Psych
                   print ","
                   space!
                 end
-                emit(key)
+                emit(key, skip_comment: true)
                 print ":"
+                emit_comment(key.inline_comment, space: true) if key.inline_comment # special case for inline key comment
                 space!
                 emit(value)
                 cont = true
@@ -157,16 +157,24 @@ module Psych
             else
               newline!
               node.children.each_slice(2) do |(key, value)|
-                emit(key)
+                emit(key, skip_comment: true)
                 print ":"
-                space!
-                if single_line?(value) || has_bullet(value)
+
+                # special case for inline key comment
+                if key.inline_comment
+                  emit_comment(key.inline_comment, space: true)
+                else
+                  space!
+                end
+
+                if !key.inline_comment || single_line?(value) || has_bullet(value)
                   emit(value)
                 else
                   indented do
                     emit(value)
                   end
                 end
+
                 emit_comment(node.inline_comment, newline: false) if node.inline_comment
                 newline!
               end
