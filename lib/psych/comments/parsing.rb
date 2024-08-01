@@ -51,9 +51,14 @@ module Psych
         when Psych::Nodes::Scalar, Psych::Nodes::Alias
           node.leading_comments.push(*read_comments(node.start_line, node.start_column))
           has_delim = char_at(node.end_line, node.end_column) == ":"
-          inline_comment = line_remaining(node.end_line, node.end_column + (has_delim ? 1 : 0)).match(/^\s*(#.*)?$/)
-          node.inline_comment = inline_comment[1] if inline_comment && inline_comment[1]
-          @last = [node.end_line+1, 0]
+          if node.end_column != 0 # special case on scalars that consume the entire line (e.g. block scalars)
+            inline_comment = line_remaining(node.end_line, node.end_column + (has_delim ? 1 : 0)).match(/^\s*(#.*)?$/)
+            node.inline_comment = inline_comment[1] if inline_comment && inline_comment[1]
+            @last = [node.end_line+1, 0]
+          else
+            @last = [node.end_line, 0]
+          end
+
         when Psych::Nodes::Sequence, Psych::Nodes::Mapping
           has_delim = /[\[{]/.match?(char_at(node.start_line, node.start_column)) # TODO: could this be replaced by node.style == Psych::Nodes::Sequence::FLOW ?
           has_bullet = node.is_a?(Psych::Nodes::Sequence) && !has_delim

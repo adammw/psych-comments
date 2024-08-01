@@ -278,5 +278,18 @@ RSpec.describe "Parsing" do
         ast => ["# bar"]
       })
     end
+
+    it "doesn't get confused by block scalars" do
+      ast = Psych::Comments.parse(<<~YAML)
+        foo: |
+          # foo
+          - bar
+        # foobar
+        foobar: "foobar"
+      YAML
+      expect_comments(ast, leading_comments: {
+        ast.root.children[2] => ["# foobar"]
+      })
+    end
   end
 end
