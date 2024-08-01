@@ -5,14 +5,53 @@ require 'stringio'
 
 RSpec.describe "Parsing" do
   describe "#parse" do
+    def walk(node, &block)
+      block.call(node)
+      node.children&.each { |child| walk(child, &block) }
+    end
+
+    def expect_comments(ast, expected)
+      expected ||= {}
+      expected[:inline_leading_comment] ||= {}
+      expected[:inline_comment] ||= {}
+      expected[:leading_comments] ||= {}
+      expected[:trailing_comments] ||= {}
+
+      expected[:leading_comments].default = []
+      expected[:trailing_comments].default = []
+
+      walk(ast) do |node|
+        if node.respond_to?(:inline_leading_comment)
+          expect(node.inline_leading_comment).to(
+            eq(expected[:inline_leading_comment][node]),
+            "expected #{node} to have inline leading comment #{expected[:inline_leading_comment][node].inspect}, got #{node.inline_leading_comment.inspect}"
+          )
+        end
+        expect(node.inline_comment).to(
+          eq(expected[:inline_comment][node]),
+          "expected #{node} to have inline comment #{expected[:inline_comment][node].inspect}, got #{node.inline_comment.inspect}"
+        )
+        expect(node.leading_comments).to(
+          eq(expected[:leading_comments][node]),
+          "expected #{node} to have leading comments #{expected[:leading_comments][node].inspect}, got #{node.leading_comments.inspect}"
+        )
+        expect(node.trailing_comments).to(
+          eq(expected[:trailing_comments][node]),
+          "expected #{node} to have trailing_comments comments #{expected[:trailing_comments][node].inspect}, got #{node.trailing_comments.inspect}"
+        )
+      end
+    end
+
     it "returns Psych::Nodes::Document" do
       ast = Psych::Comments.parse("- 1")
       expect(ast).to be_a(Psych::Nodes::Document)
+      expect_comments(ast, nil)
     end
 
     it "accepts filename" do
       ast = Psych::Comments.parse("- 1", filename: "foo.yml")
       expect(ast).to be_a(Psych::Nodes::Document)
+      expect_comments(ast, nil)
     end
 
     it "accepts IO" do
@@ -25,18 +64,14 @@ RSpec.describe "Parsing" do
         # foo
         bar
       YAML
-      expect(ast.root.leading_comments).to eq(["# foo"])
-      expect(ast.root.inline_comment).to eq(nil)
-      expect(ast.root.trailing_comments).to eq([])
+      expect_comments(ast, leading_comments: { ast.root => ["# foo"] })
     end
 
     it "attaches inline comments to a scalar" do
       ast = Psych::Comments.parse(<<~YAML)
         bar # foo
       YAML
-      expect(ast.root.leading_comments).to eq([])
-      expect(ast.root.inline_comment).to eq("# foo")
-      expect(ast.root.trailing_comments).to eq([])
+      expect_comments(ast, inline_comment: { ast.root => "# foo" })
     end
 
     it "attaches multiple comments to a scalar" do
@@ -45,7 +80,7 @@ RSpec.describe "Parsing" do
         # bar
         baz
       YAML
-      expect(ast.root.leading_comments).to eq(["# foo", "# bar"])
+      expect_comments(ast, leading_comments: { ast.root => ["# foo", "# bar"] })
     end
 
     it "attaches leading comments to a mapping key" do
@@ -54,7 +89,7 @@ RSpec.describe "Parsing" do
         bar: baz
       YAML
       expect(ast.root).to be_a(Psych::Nodes::Mapping)
-      expect(ast.root.children[0].leading_comments).to eq(["# foo"])
+      expect_comments(ast, leading_comments: { ast.root.children[0] => ["# foo"] })
     end
 
     it "attaches inline comments to a mapping key" do
@@ -65,10 +100,10 @@ RSpec.describe "Parsing" do
           - bar
       YAML
       expect(ast.root).to be_a(Psych::Nodes::Mapping)
-      expect(ast.root.children[0].inline_comment).to eq("# foo")
-      expect(ast.root.children[1].inline_comment).to eq(nil)
-      expect(ast.root.children[2].inline_comment).to eq("# bar")
-      expect(ast.root.children[3].inline_comment).to eq(nil)
+      expect_comments(ast, inline_comment: {
+        ast.root.children[0] => "# foo",
+        ast.root.children[2] => "# bar"
+      })
     end
 
     it "attaches inline comments to a mapping value" do
@@ -76,8 +111,9 @@ RSpec.describe "Parsing" do
         bar: baz # foo
       YAML
       expect(ast.root).to be_a(Psych::Nodes::Mapping)
-      expect(ast.root.children[0].inline_comment).to eq(nil)
-      expect(ast.root.children[1].inline_comment).to eq("# foo")
+      expect_comments(ast, inline_comment: {
+        ast.root.children[1] => "# foo"
+      })
     end
 
     it "attaches leading comments to a mapping value" do
@@ -87,7 +123,9 @@ RSpec.describe "Parsing" do
           baz
       YAML
       expect(ast.root).to be_a(Psych::Nodes::Mapping)
-      expect(ast.root.children[1].leading_comments).to eq(["# foo"])
+      expect_comments(ast, leading_comments: {
+        ast.root.children[1] => ["# foo"]
+      })
     end
 
     it "attaches comments to sequence elements" do
@@ -101,10 +139,14 @@ RSpec.describe "Parsing" do
           foo3: bar3 # baz-c
       YAML
       expect(ast.root).to be_a(Psych::Nodes::Sequence)
-      expect(ast.root.children[0].leading_comments).to eq(["# foo"])
-      expect(ast.root.children[1].leading_comments).to eq(["# bar"])
-      expect(ast.root.children[2].leading_comments).to eq(["# baz-a"])
-      expect(ast.root.children[2].children[1].inline_comment).to eq("# baz-c")
+      expect_comments(ast, leading_comments: {
+        ast.root.children[0] => ["# foo"],
+        ast.root.children[1] => ["# bar"],
+        ast.root.children[2] => ["# baz-a"],
+        ast.root.children[2].children[0] => ["# baz-b"]
+      }, inline_comment: {
+        ast.root.children[2].children[1] => "# baz-c"
+      })
     end
 
     it "attaches inline comments to sequence elements containing flow mappings/sequences" do
@@ -114,20 +156,12 @@ RSpec.describe "Parsing" do
         - {} # empty map
         - { foo: bar } # map with one key-value pair
       YAML
-      expected_comments = {
+      expect_comments(ast, inline_comment: {
         ast.root.children[0] => "# empty array",
         ast.root.children[1] => "# array of integers",
         ast.root.children[2] => "# empty map",
         ast.root.children[3] => "# map with one key-value pair"
-      }
-      visit = lambda do |node|
-        expect(node.inline_leading_comment).to eq(nil) if node.is_a?(Psych::Nodes::Sequence) || node.is_a?(Psych::Nodes::Mapping)
-        expect(node.inline_comment).to eq(expected_comments[node])
-        expect(node.leading_comments).to eq([])
-        expect(node.trailing_comments).to eq([])
-        node.children&.each { |child| visit.call(child) }
-      end
-      visit.call(ast.root)
+      })
     end
 
     it "attaches inline comments to empty flow mapping/sequence" do
@@ -137,8 +171,10 @@ RSpec.describe "Parsing" do
       YAML
 
       expect(ast.root).to be_a(Psych::Nodes::Mapping)
-      expect(ast.root.children[1].inline_comment).to eq("# foo")
-      expect(ast.root.children[3].inline_comment).to eq("# bar")
+      expect_comments(ast, inline_comment: {
+        ast.root.children[1] => "# foo",
+        ast.root.children[3] => "# bar"
+      })
     end
 
     it "attaches inline comments only to flow mapping/sequence" do
@@ -148,18 +184,11 @@ RSpec.describe "Parsing" do
         baz:
         - { key: "name", values: 3 } # baz
       YAML
-      expected_comments = {
+      expect_comments(ast, inline_comment: {
         ast.root.children[1] => "# foo",
         ast.root.children[3] => "# bar",
         ast.root.children[5].children[0] => "# baz"
-      }
-      visit = lambda do |node|
-        expect(node.inline_comment).to eq(expected_comments[node])
-        expect(node.leading_comments).to eq([])
-        expect(node.trailing_comments).to eq([])
-        node.children&.each { |child| visit.call(child) }
-      end
-      visit.call(ast.root)
+      })
     end
 
     it "attaches comments to flow mapping" do
@@ -173,13 +202,24 @@ RSpec.describe "Parsing" do
         # trailing
       YAML
       expect(ast.root).to be_a(Psych::Nodes::Mapping)
-      expect(ast.root.leading_comments).to eq(["# leading"])
-      expect(ast.root.inline_leading_comment).to eq("# inline leading")
-      expect(ast.root.inline_comment).to eq("# inline trailing")
-      expect(ast.trailing_comments).to eq(["# trailing"])
-      expect(ast.root.children[0].leading_comments).to eq(["# foo"])
-      expect(ast.root.children[1].inline_comment).to eq("# bar")
-      expect(ast.root.children[1].trailing_comments).to eq(["# baz"])
+      expect_comments(
+        ast,
+        leading_comments: {
+          ast.root => ["# leading"],
+          ast.root.children[0] => ["# foo"]
+        },
+        inline_leading_comment: {
+          ast.root => "# inline leading"
+        },
+        inline_comment: {
+          ast.root => "# inline trailing",
+          ast.root.children[1] => "# bar",
+        },
+        trailing_comments: {
+          ast => ["# trailing"],
+          ast.root.children[1] => ["# baz"]
+        }
+      )
     end
 
     it "attaches comments to flow sequence" do
@@ -193,13 +233,24 @@ RSpec.describe "Parsing" do
         # trailing
       YAML
       expect(ast.root).to be_a(Psych::Nodes::Sequence)
-      expect(ast.root.leading_comments).to eq(["# leading"])
-      expect(ast.root.inline_leading_comment).to eq("# inline leading")
-      expect(ast.root.inline_comment).to eq("# inline trailing")
-      expect(ast.trailing_comments).to eq(["# trailing"])
-      expect(ast.root.children[0].leading_comments).to eq(["# foo"])
-      expect(ast.root.children[0].inline_comment).to eq("# bar")
-      expect(ast.root.children[0].trailing_comments).to eq(["# baz"])
+      expect_comments(
+        ast,
+        leading_comments: {
+          ast.root => ["# leading"],
+          ast.root.children[0] => ["# foo"]
+        },
+        inline_leading_comment: {
+          ast.root => "# inline leading"
+        },
+        inline_comment: {
+          ast.root => "# inline trailing",
+          ast.root.children[0] => "# bar"
+        },
+        trailing_comments: {
+          ast => ["# trailing"],
+          ast.root.children[0] => ["# baz"]
+        }
+      )
     end
 
     it "attaches comments to document" do
@@ -209,8 +260,10 @@ RSpec.describe "Parsing" do
         # bar
         1
       YAML
-      expect(ast.leading_comments).to eq(["# foo"])
-      expect(ast.root.leading_comments).to eq(["# bar"])
+      expect_comments(ast, leading_comments: {
+        ast => ["# foo"],
+        ast.root => ["# bar"]
+      })
     end
 
     it "attaches trailing comments in the last node of document" do
@@ -220,8 +273,10 @@ RSpec.describe "Parsing" do
         ...
         # bar
       YAML
-      expect(ast.root.trailing_comments).to eq(["# foo"])
-      expect(ast.trailing_comments).to eq(["# bar"])
+      expect_comments(ast, trailing_comments: {
+        ast.root => ["# foo"],
+        ast => ["# bar"]
+      })
     end
   end
 end
