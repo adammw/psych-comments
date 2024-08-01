@@ -138,7 +138,10 @@ module Psych
           set_flow(flow?(node)) do
             if @flow
               print "{"
-              emit_comment(node.inline_leading_comment, space: true) if node.inline_leading_comment
+              if node.inline_leading_comment
+                emit_comment(node.inline_leading_comment, space: true)
+                @indent += 1 # newline, indent rest of flow-block
+              end
               cont = false
               node.children.each_slice(2) do |(key, value)|
                 if cont
@@ -151,6 +154,9 @@ module Psych
                 space!
                 emit(value)
                 cont = true
+              end
+              if node.inline_leading_comment
+                @indent -= 1
               end
               print "}"
               emit_comment(node.inline_comment, space: true) if node.inline_comment
@@ -167,7 +173,7 @@ module Psych
                   space!
                 end
 
-                if !key.inline_comment || single_line?(value) || has_bullet(value)
+                if single_line?(value) || has_bullet(value)
                   emit(value)
                 else
                   indented do
@@ -191,7 +197,13 @@ module Psych
                   print ","
                   space!
                 end
-                emit(subnode)
+                if node.inline_leading_comment
+                  indented do
+                    emit(subnode)
+                  end
+                else
+                  emit(subnode)
+                end
                 cont = true
               end
               print "]"

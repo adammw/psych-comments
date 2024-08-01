@@ -5,8 +5,8 @@
 - [ # leading comment for empty array
 ]
 - [ # leading comment for array of integers
-1, 2]
+  1, 2]
 - { # leading comment for empty map
 }
 - { # leading comment for map with one key-value pair
-foo: bar}
+  foo: bar}
