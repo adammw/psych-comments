@@ -139,6 +139,7 @@ module Psych
           set_flow(flow?(node)) do
             if @flow
               print "{"
+              emit_comment(node.inline_leading_comment, space: true) if node.inline_leading_comment
               cont = false
               node.children.each_slice(2) do |(key, value)|
                 if cont
@@ -152,6 +153,7 @@ module Psych
                 cont = true
               end
               print "}"
+              emit_comment(node.inline_comment, space: true) if node.inline_comment
             else
               newline!
               node.children.each_slice(2) do |(key, value)|
@@ -174,6 +176,7 @@ module Psych
           set_flow(flow?(node)) do
             if @flow
               print "["
+              emit_comment(node.inline_leading_comment, space: true) if node.inline_leading_comment
               cont = false
               node.children.each do |subnode|
                 if cont
@@ -184,6 +187,7 @@ module Psych
                 cont = true
               end
               print "]"
+              emit_comment(node.inline_comment, space: true) if node.inline_comment
             else
               newline!
               node.children.each do |subnode|
@@ -242,10 +246,11 @@ module Psych
         @comment_lookahead.push(node)
       end
 
-      def emit_comment(comment, newline: true)
+      def emit_comment(comment, newline: true, space: false)
         unless /\A#[^\r\n]*\z/.match?(comment)
           raise ArgumentError, "Invalid comment: #{comment.inspect}"
         end
+        space! if space
         print comment
         newline! if newline
       end
@@ -269,13 +274,13 @@ module Psych
       end
 
       def single_line?(node)
-        flow?(node) && node.leading_comments.empty? && node.trailing_comments.empty?
+        flow?(node) &&
+          node.leading_comments.empty? &&
+          node.trailing_comments.empty? &&
+          !has_child_inline_comments?(node)
       end
 
       def flow?(node)
-        # cannot be in flow if any children have inline comments
-        return false if has_child_inline_comments?(node)
-
         case node
         when Psych::Nodes::Scalar, Psych::Nodes::Alias
           true
@@ -289,7 +294,11 @@ module Psych
       end
 
       def has_child_inline_comments?(node)
-        node.children&.any? { |child| child.inline_comment || has_child_inline_comments?(child) } || false
+        node.children&.any? do |child|
+          child.inline_comment ||
+            (child.respond_to?(:inline_leading_comment) && child.inline_leading_comment) ||
+            has_child_inline_comments?(child)
+        end || false
       end
 
       # @param tag [String]

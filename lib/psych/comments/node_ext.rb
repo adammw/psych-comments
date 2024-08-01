@@ -11,3 +11,11 @@ class Psych::Nodes::Node
     @trailing_comments ||= []
   end
 end
+
+class Psych::Nodes::Mapping
+  attr_accessor :inline_leading_comment
+end
+
+class Psych::Nodes::Sequence
+  attr_accessor :inline_leading_comment
+end

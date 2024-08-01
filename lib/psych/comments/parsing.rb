@@ -53,21 +53,37 @@ module Psych
           has_delim = char_at(node.end_line, node.end_column) == ":"
           inline_comment = line_remaining(node.end_line, node.end_column + (has_delim ? 1 : 0)).match(/^\s*(#.*)?$/)
           node.inline_comment = inline_comment[1] if inline_comment && inline_comment[1]
-          @last = [node.end_line, node.end_column + (inline_comment&.values_at(0)&.first&.length || 0)]
+          @last = [node.end_line+1, 0]
         when Psych::Nodes::Sequence, Psych::Nodes::Mapping
-          has_delim = /[\[{]/.match?(char_at(node.start_line, node.start_column))
+          has_delim = /[\[{]/.match?(char_at(node.start_line, node.start_column)) # TODO: could this be replaced by node.style == Psych::Nodes::Sequence::FLOW ?
           has_bullet = node.is_a?(Psych::Nodes::Sequence) && !has_delim
+
           # Special-case on `- #foo\n  bar: baz`
           node.leading_comments.push(*read_comments(node.start_line, node.start_column)) if has_delim
+
+          # Special-case on `[ # foo` or `{ # foo`
+          inline_comment = line_remaining(node.start_line, node.start_column + 1).match(/^\s*(#.*)?$/)
+          if has_delim && inline_comment && inline_comment[1]
+            node.inline_leading_comment = inline_comment[1]
+            @last = [node.start_line + 1, 0]
+          end
+
           node.children.each do |subnode|
             @bullet_owner = subnode if has_bullet
             visit(subnode)
           end
+
           if has_delim
             target = node.children[-1] || node
-            inline_comment = line_remaining(node.end_line, node.end_column).match(/^\s*(#.*)?$/)
-            node.inline_comment = inline_comment[1] if inline_comment && inline_comment[1]
             target.trailing_comments.push(*read_comments(node.end_line, node.end_column))
+
+            # Special-case on `] # bar` or `} # bar`
+            inline_comment = line_remaining(node.end_line, node.end_column).match(/^\s*(#.*)?$/)
+            trailing_start = [node.end_line, node.end_column]
+            if inline_comment && inline_comment[1]
+              node.inline_comment = inline_comment[1]
+              @last = trailing_start = [node.end_line + 1, 0]
+            end
           end
         when Psych::Nodes::Document
           if !node.implicit
