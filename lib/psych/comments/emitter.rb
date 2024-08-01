@@ -131,6 +131,10 @@ module Psych
           else
             print stringify_adjust_scalar(node, INDENT * @indent)
           end
+          if node.inline_comment
+            space!
+            emit_comment(node.inline_comment)
+          end
         when Psych::Nodes::Mapping
           set_flow(flow?(node)) do
             if @flow
@@ -161,6 +165,7 @@ module Psych
                     emit(value)
                   end
                 end
+                emit_comment(node.inline_comment, newline: false) if node.inline_comment
                 newline!
               end
             end
@@ -192,6 +197,7 @@ module Psych
                     emit(subnode)
                   end
                 end
+                emit_comment(node.inline_comment, newline: false) if node.inline_comment
                 newline!
               end
             end
@@ -236,12 +242,12 @@ module Psych
         @comment_lookahead.push(node)
       end
 
-      def emit_comment(comment)
+      def emit_comment(comment, newline: true)
         unless /\A#[^\r\n]*\z/.match?(comment)
           raise ArgumentError, "Invalid comment: #{comment.inspect}"
         end
         print comment
-        newline!
+        newline! if newline
       end
 
       def indented(&block)
@@ -267,6 +273,9 @@ module Psych
       end
 
       def flow?(node)
+        # cannot be in flow if any children have inline comments
+        return false if has_child_inline_comments?(node)
+
         case node
         when Psych::Nodes::Scalar, Psych::Nodes::Alias
           true
@@ -277,6 +286,10 @@ module Psych
         else
           false
         end
+      end
+
+      def has_child_inline_comments?(node)
+        node.children&.any? { |child| child.inline_comment || has_child_inline_comments?(child) } || false
       end
 
       # @param tag [String]

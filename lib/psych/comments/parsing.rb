@@ -19,6 +19,10 @@ module Psych
         end
       end
 
+      def line_remaining(l, sc)
+        sublines(l, sc, l, nil)
+      end
+
       def char_at(l, c)
         (@lines[l] || "")[c]
       end
@@ -46,7 +50,10 @@ module Psych
         case node
         when Psych::Nodes::Scalar, Psych::Nodes::Alias
           node.leading_comments.push(*read_comments(node.start_line, node.start_column))
-          @last = [node.end_line, node.end_column]
+          has_delim = char_at(node.end_line, node.end_column) == ":"
+          inline_comment = line_remaining(node.end_line, node.end_column + (has_delim ? 1 : 0)).match(/^\s*(#.*)?$/)
+          node.inline_comment = inline_comment[1] if inline_comment && inline_comment[1]
+          @last = [node.end_line, node.end_column + (inline_comment&.values_at(0)&.first&.length || 0)]
         when Psych::Nodes::Sequence, Psych::Nodes::Mapping
           has_delim = /[\[{]/.match?(char_at(node.start_line, node.start_column))
           has_bullet = node.is_a?(Psych::Nodes::Sequence) && !has_delim
@@ -58,6 +65,8 @@ module Psych
           end
           if has_delim
             target = node.children[-1] || node
+            inline_comment = line_remaining(node.end_line, node.end_column).match(/^\s*(#.*)?$/)
+            node.inline_comment = inline_comment[1] if inline_comment && inline_comment[1]
             target.trailing_comments.push(*read_comments(node.end_line, node.end_column))
           end
         when Psych::Nodes::Document

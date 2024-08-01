@@ -1,4 +1,4 @@
-- []
-- [1, 2]
-- {}
-- { foo: bar }
+- [] # empty array
+- [1, 2] # array of integers
+- {} # empty map
+- { foo: bar } # map with one key-value pair
